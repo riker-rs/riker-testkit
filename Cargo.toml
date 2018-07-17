@@ -5,7 +5,7 @@ authors = ["Lee Smith <leenozara@gmail.com>"]
 description = "Tools to make testing Riker applications easier"
 homepage = "http://riker.rs/logging"
 license = "MIT"
-readme = "README"
+readme = "README.md"
 
 [dependencies]
-chrono = "*"
+chrono = "0.4"
