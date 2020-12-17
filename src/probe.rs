@@ -38,12 +38,14 @@ pub mod channel {
     use chrono::prelude::*;
     #[cfg(not(feature = "tokio_executor"))]
     use std::sync::mpsc::{channel, Sender, Receiver};
+
     #[cfg(feature = "tokio_executor")]
-    use tokio::sync::mpsc::{channel, Sender, Receiver};
-    #[cfg(feature = "tokio_executor")]
-    use std::{
-        future::Future,
-        pin::Pin,
+    use {
+        tokio::sync::mpsc::{channel, Sender, Receiver},
+        std::{
+            future::Future,
+            pin::Pin,
+        }
     };
 
     pub fn probe<T: Send>() -> (ChannelProbe<(), T>, ChannelProbeReceive<T>) {
@@ -70,13 +72,6 @@ pub mod channel {
         (probe, receiver)
     }
 
-    #[cfg(not(feature = "tokio_executor"))]
-    #[derive(Clone, Debug)]
-    pub struct ChannelProbe<P: Send, T> {
-        payload: Option<P>,
-        tx: Sender<T>,
-    }
-    #[cfg(feature = "tokio_executor")]
     #[derive(Clone, Debug)]
     pub struct ChannelProbe<P, T> {
         payload: Option<P>,
@@ -141,7 +136,7 @@ pub mod channel {
             fn event(&self, evt: T) -> Pin<Box<dyn Future<Output=()> + Send>> {
                 let tx = self.clone().as_ref().unwrap().tx.clone();
                 Box::pin(async move {
-                    drop(tx.send(evt).await)
+                    tx.send(evt).await.unwrap()
                 })
             }
 
