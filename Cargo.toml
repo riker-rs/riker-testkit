@@ -10,7 +10,7 @@ readme = "README.md"
 
 [dependencies]
 chrono = "0.4"
-tokio = { version="0.3.6", features = ["rt-multi-thread", "macros", "sync"], optional = true }
+tokio = { version = "^0.2", features = ["rt-threaded", "macros"], optional = true }
 async-trait = { version="0.1.42", optional = true }
 
 [features]
