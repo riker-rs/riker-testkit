@@ -85,7 +85,7 @@ pub mod channel {
             type Pay = P;
 
             fn event(&self, evt: T) {
-                drop(self.tx.send(evt));
+                self.tx.send(evt).unwrap()
             }
 
             fn payload(&self) -> &P {
@@ -100,7 +100,7 @@ pub mod channel {
             type Pay = P;
 
             fn event(&self, evt: T) {
-                drop(self.as_ref().unwrap().tx.send(evt));
+                self.as_ref().unwrap().tx.send(evt).unwrap()
             }
 
             fn payload(&self) -> &P {
@@ -206,37 +206,16 @@ pub mod macros {
     /// If an unexpected event is received it will assert!(false).
     /// Each good event is removed from the expected vector.
     /// The assertion is complete when there are no more expected events.
-    #[cfg(feature = "tokio_executor")]
     #[macro_export]
     macro_rules! p_assert_events {
         ($listen:expr, $expected:expr) => {
             let mut expected = $expected.clone(); // so we don't need the original mutable
             
             loop {
-                let val = $listen.recv().await;
-                match expected.iter().position(|x| x == &val) {
-                    Some(pos) => {
-                        expected.remove(pos);
-                        if expected.len() == 0 {
-                            break;
-                        }
-                    }
-                    _ => {
-                        // probe has received an unexpected event value
-                        assert!(false);
-                    }
-                }
-            }
-        };
-    }
-    #[cfg(not(feature = "tokio_executor"))]
-    #[macro_export]
-    macro_rules! p_assert_events {
-        ($listen:expr, $expected:expr) => {
-            let mut expected = $expected.clone(); // so we don't need the original mutable
-            
-            loop {
+                #[cfg(not(feature = "tokio_executor"))]
                 let val = $listen.recv();
+                #[cfg(feature = "tokio_executor")]
+                let val = $listen.recv().await;
                 match expected.iter().position(|x| x == &val) {
                     Some(pos) => {
                         expected.remove(pos);
