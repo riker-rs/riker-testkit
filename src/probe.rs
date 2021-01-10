@@ -115,7 +115,7 @@ pub mod channel {
             type Pay = P;
 
             fn event(&self, evt: T) -> Pin<Box<dyn Future<Output=()> + Send>> {
-                let tx = self.clone().tx.clone();
+                let mut tx = self.clone().tx.clone();
                 Box::pin(async move {
                     tx.send(evt).await.unwrap()
                 })
@@ -134,7 +134,7 @@ pub mod channel {
             type Pay = P;
 
             fn event(&self, evt: T) -> Pin<Box<dyn Future<Output=()> + Send>> {
-                let tx = self.clone().as_ref().unwrap().tx.clone();
+                let mut tx = self.clone().as_ref().unwrap().tx.clone();
                 Box::pin(async move {
                     tx.send(evt).await.unwrap()
                 })
