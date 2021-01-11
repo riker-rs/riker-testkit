@@ -1,14 +1,9 @@
-use std::{
-    future::Future,
-    pin::Pin,
-};
-
 #[async_trait::async_trait]
 pub trait Probe {
     type Msg: Send;
-    type Pay: Clone + Send;
+    type Pay: Clone + Send + Sync;
     
-    fn event(&self, evt: Self::Msg) -> Pin<Box<dyn Future<Output=()> + Send>>;
+    fn event(&self, evt: Self::Msg);
     fn payload(&self) -> &Self::Pay;
 }
 
@@ -30,12 +25,10 @@ pub mod channel {
 
     use chrono::prelude::*;
 
-    use {
-        tokio::sync::mpsc::{channel, Sender, Receiver},
-        std::{
-            future::Future,
-            pin::Pin,
-        }
+    use tokio::sync::mpsc::{
+        channel,
+        Sender,
+        Receiver,
     };
 
     pub fn probe<T: Send>() -> (ChannelProbe<(), T>, ChannelProbeReceive<T>) {
@@ -67,15 +60,15 @@ pub mod channel {
 
     #[async_trait::async_trait]
     impl<P, T: std::fmt::Debug + 'static> Probe for ChannelProbe<P, T> 
-        where P: Clone + Send, T: Send {
+        where P: Clone + Send + Sync, T: Send {
             type Msg = T;
             type Pay = P;
 
-            fn event(&self, evt: T) -> Pin<Box<dyn Future<Output=()> + Send>> {
+            fn event(&self, evt: T) {
                 let tx = self.clone().tx.clone();
-                Box::pin(async move {
-                    tx.send(evt).await.unwrap()
-                })
+                tokio::spawn(async move {
+                    tx.send(evt).await.unwrap();
+                });
             }
 
             fn payload(&self) -> &P {
@@ -85,15 +78,15 @@ pub mod channel {
 
     #[async_trait::async_trait]
     impl<P, T: std::fmt::Debug + 'static> Probe for Option<ChannelProbe<P, T>>
-        where P: Clone + Send, T: Send {
+        where P: Clone + Send + Sync, T: Send {
             type Msg = T;
             type Pay = P;
 
-            fn event(&self, evt: T) -> Pin<Box<dyn Future<Output=()> + Send>> {
+            fn event(&self, evt: T) {
                 let tx = self.clone().as_ref().unwrap().tx.clone();
-                Box::pin(async move {
-                    tx.send(evt).await.unwrap()
-                })
+                tokio::spawn(async move {
+                    tx.send(evt).await.unwrap();
+                });
             }
 
             fn payload(&self) -> &P {
@@ -187,7 +180,7 @@ pub mod macros {
         async fn p_assert_eq() {
             let (probe, mut listen) = probe();
 
-            probe.event("test".to_string()).await;
+            probe.event("test".to_string());
             
             p_assert_eq!(listen, "test".to_string());
         }
@@ -197,9 +190,9 @@ pub mod macros {
             let (probe, mut listen) = probe();
 
             let expected = vec!["event_1", "event_2", "event_3"];
-            probe.event("event_1").await;
-            probe.event("event_2").await;
-            probe.event("event_3").await;
+            probe.event("event_1");
+            probe.event("event_2");
+            probe.event("event_3");
             
             p_assert_events!(listen, expected);
         }
@@ -207,7 +200,7 @@ pub mod macros {
         #[tokio::test]
         async fn p_timer() {
             let (probe, listen) = probe();
-            probe.event("event_3").await;
+            probe.event("event_3");
             
             println!("Milliseconds: {}", p_timer!(listen));
         }
@@ -224,9 +217,7 @@ mod tests {
     async fn chan_probe() {
         let (probe, mut listen) = probe();
 
-        tokio::spawn(async move {
-            probe.event("some event").await;
-        });
+        probe.event("some event");
 
         p_assert_eq!(listen, "some event");
     }
@@ -236,15 +227,12 @@ mod tests {
         let payload = "test data".to_string();
         let (probe, mut listen) = probe_with_payload(payload);
 
-        tokio::spawn(async move {
-            // only event the expected result if the payload is what we expect
-            if probe.payload() == "test data" {
-                probe.event("data received").await;
-            } else {
-                probe.event("").await;
-            }
-            
-        });
+        // only event the expected result if the payload is what we expect
+        if probe.payload() == "test data" {
+            probe.event("data received");
+        } else {
+            probe.event("");
+        }
 
         p_assert_eq!(listen, "data received");
     }
