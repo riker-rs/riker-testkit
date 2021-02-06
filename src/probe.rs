@@ -82,7 +82,9 @@ pub mod channel {
                     tx.send(evt).await.unwrap();
                 });
                 #[cfg(not(feature = "tokio_executor"))]
-                drop(tx.send(evt));
+                std::thread::spawn(move || {
+                    drop(tx.send(evt));
+                });
             }
 
             fn payload(&self) -> &P {
@@ -96,17 +98,11 @@ pub mod channel {
             type Pay = P;
 
             fn event(&self, evt: T) {
-                let tx = self.clone().as_ref().unwrap().tx.clone();
-                #[cfg(feature = "tokio_executor")]
-                tokio::spawn(async move {
-                    tx.send(evt).await.unwrap();
-                });
-                #[cfg(not(feature = "tokio_executor"))]
-                drop(tx.send(evt));
+                self.as_ref().unwrap().event(evt);
             }
 
             fn payload(&self) -> &P {
-                &self.as_ref().unwrap().payload.as_ref().unwrap()
+                self.as_ref().unwrap().payload()
             }
     }
 
