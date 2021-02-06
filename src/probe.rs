@@ -1,4 +1,3 @@
-#[async_trait::async_trait]
 pub trait Probe {
     type Msg: Send;
     type Pay: Clone + Send + Sync;
@@ -7,11 +6,14 @@ pub trait Probe {
     fn payload(&self) -> &Self::Pay;
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(feature = "tokio_executor", async_trait::async_trait)]
 pub trait ProbeReceive {
     type Msg: Send;
 
+    #[cfg(feature = "tokio_executor")]
     async fn recv(&mut self) -> Self::Msg;
+    #[cfg(not(feature = "tokio_executor"))]
+    fn recv(&mut self) -> Self::Msg;
     fn reset_timer(&mut self);
     fn last_event_milliseconds(&self) -> u64;
     fn last_event_seconds(&self) -> u64;
@@ -25,7 +27,14 @@ pub mod channel {
 
     use chrono::prelude::*;
 
+    #[cfg(feature = "tokio_executor")]
     use tokio::sync::mpsc::{
+        channel,
+        Sender,
+        Receiver,
+    };
+    #[cfg(not(feature = "tokio_executor"))]
+    use std::sync::mpsc::{
         channel,
         Sender,
         Receiver,
@@ -36,7 +45,10 @@ pub mod channel {
     }
 
     pub fn probe_with_payload<P: Clone + Send, T: Send>(payload: P) -> (ChannelProbe<P, T>, ChannelProbeReceive<T>) {
+        #[cfg(feature = "tokio_executor")]
         let (tx, rx) = channel::<T>(100);
+        #[cfg(not(feature = "tokio_executor"))]
+        let (tx, rx) = channel::<T>();
 
         let probe = ChannelProbe {
             payload: Some(payload),
@@ -58,7 +70,6 @@ pub mod channel {
         tx: Sender<T>,
     }
 
-    #[async_trait::async_trait]
     impl<P, T: std::fmt::Debug + 'static> Probe for ChannelProbe<P, T> 
         where P: Clone + Send + Sync, T: Send {
             type Msg = T;
@@ -66,9 +77,12 @@ pub mod channel {
 
             fn event(&self, evt: T) {
                 let tx = self.clone().tx.clone();
+                #[cfg(feature = "tokio_executor")]
                 tokio::spawn(async move {
                     tx.send(evt).await.unwrap();
                 });
+                #[cfg(not(feature = "tokio_executor"))]
+                drop(tx.send(evt));
             }
 
             fn payload(&self) -> &P {
@@ -76,7 +90,6 @@ pub mod channel {
             }
     }
 
-    #[async_trait::async_trait]
     impl<P, T: std::fmt::Debug + 'static> Probe for Option<ChannelProbe<P, T>>
         where P: Clone + Send + Sync, T: Send {
             type Msg = T;
@@ -84,9 +97,12 @@ pub mod channel {
 
             fn event(&self, evt: T) {
                 let tx = self.clone().as_ref().unwrap().tx.clone();
+                #[cfg(feature = "tokio_executor")]
                 tokio::spawn(async move {
                     tx.send(evt).await.unwrap();
                 });
+                #[cfg(not(feature = "tokio_executor"))]
+                drop(tx.send(evt));
             }
 
             fn payload(&self) -> &P {
@@ -101,12 +117,17 @@ pub mod channel {
         timer_start: DateTime<Utc>,
     }
 
-    #[async_trait::async_trait]
+    #[cfg_attr(feature = "tokio_executor", async_trait::async_trait)]
     impl<T: Send> ProbeReceive for ChannelProbeReceive<T> {
         type Msg = T;
 
+        #[cfg(feature = "tokio_executor")]
         async fn recv(&mut self) -> T {
             self.rx.recv().await.unwrap()
+        }
+        #[cfg(not(feature = "tokio_executor"))]
+        fn recv(&mut self) -> T {
+            self.rx.recv().unwrap()
         }
 
         fn reset_timer(&mut self) {
@@ -134,7 +155,10 @@ pub mod macros {
     #[macro_export]
     macro_rules! p_assert_eq {
         ($listen:expr, $expected:expr) => {
+            #[cfg(feature = "tokio_executor")]
             assert_eq!($listen.recv().await, $expected);
+            #[cfg(not(feature = "tokio_executor"))]
+            assert_eq!($listen.recv(), $expected);
         };
     }
 
@@ -148,7 +172,10 @@ pub mod macros {
             let mut expected = $expected.clone(); // so we don't need the original mutable
             
             loop {
+                #[cfg(feature = "tokio_executor")]
                 let val = $listen.recv().await;
+                #[cfg(not(feature = "tokio_executor"))]
+                let val = $listen.recv();
                 match expected.iter().position(|x| x == &val) {
                     Some(pos) => {
                         expected.remove(pos);
@@ -176,8 +203,8 @@ pub mod macros {
     mod tests {
         use crate::probe::{Probe, ProbeReceive, channel::probe};
 
-        #[tokio::test]
-        async fn p_assert_eq() {
+        #[test_fn_macro::test]
+        fn p_assert_eq() {
             let (probe, mut listen) = probe();
 
             probe.event("test".to_string());
@@ -185,8 +212,8 @@ pub mod macros {
             p_assert_eq!(listen, "test".to_string());
         }
 
-        #[tokio::test]
-        async fn p_assert_events() {
+        #[test_fn_macro::test]
+        fn p_assert_events() {
             let (probe, mut listen) = probe();
 
             let expected = vec!["event_1", "event_2", "event_3"];
@@ -197,8 +224,8 @@ pub mod macros {
             p_assert_events!(listen, expected);
         }
 
-        #[tokio::test]
-        async fn p_timer() {
+        #[test_fn_macro::test]
+        fn p_timer() {
             let (probe, listen) = probe();
             probe.event("event_3");
             
@@ -213,8 +240,8 @@ mod tests {
     use super::{Probe, ProbeReceive};
     use super::channel::{probe, probe_with_payload};
 
-    #[tokio::test]
-    async fn chan_probe() {
+    #[test_fn_macro::test]
+    fn chan_probe() {
         let (probe, mut listen) = probe();
 
         probe.event("some event");
@@ -222,8 +249,8 @@ mod tests {
         p_assert_eq!(listen, "some event");
     }
 
-    #[tokio::test]
-    async fn chan_probe_with_payload() {
+    #[test_fn_macro::test]
+    fn chan_probe_with_payload() {
         let payload = "test data".to_string();
         let (probe, mut listen) = probe_with_payload(payload);
 
