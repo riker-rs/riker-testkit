@@ -1,11 +1,18 @@
 [package]
 name = "riker-testkit"
 version = "0.1.0"
+edition = "2018"
 authors = ["Lee Smith <leenozara@gmail.com>"]
 description = "Tools to make testing Riker applications easier"
 homepage = "http://riker.rs/logging"
 license = "MIT"
 readme = "README.md"
 
+[features]
+default = []
+tokio_executor = ["tokio", "async-trait", "test_fn_macro/tokio_executor"]
 [dependencies]
 chrono = "0.4"
+tokio = { version = "^1", features = ["rt-multi-thread", "macros", "sync"], optional = true}
+async-trait = { version="0.1.42", optional = true}
+test_fn_macro = { path = "./test_fn_macro" }
