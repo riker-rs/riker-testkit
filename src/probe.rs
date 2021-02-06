@@ -82,9 +82,7 @@ pub mod channel {
                     tx.send(evt).await.unwrap();
                 });
                 #[cfg(not(feature = "tokio_executor"))]
-                std::thread::spawn(move || {
-                    drop(tx.send(evt));
-                });
+                drop(tx.send(evt));
             }
 
             fn payload(&self) -> &P {
